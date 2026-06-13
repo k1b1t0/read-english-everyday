@@ -82,13 +82,28 @@ def main():
         
     # 3. Filter out already sent URLs using deduplication
     sent_urls = dedup.load_sent_urls()
-    candidates = [art for art in all_articles if art["url"] not in sent_urls]
+    candidates = [art for art in all_articles if dedup.normalize_url(art["url"]) not in sent_urls]
     
     logger.info(f"Filtered {len(all_articles)} articles down to {len(candidates)} unsent candidates.")
     
+    # If category feed has no new articles, fall back to the general feed to find new content
+    if not candidates and category_slug is not None:
+        logger.warning(f"All articles in category '{category_slug}' feed have already been sent. Falling back to the general RSS feed to search for new content.")
+        all_articles = feeds.fetch_articles(category_slug=None, max_items=args.limit)
+        if all_articles:
+            candidates = [art for art in all_articles if dedup.normalize_url(art["url"]) not in sent_urls]
+            logger.info(f"Fallback to general feed: found {len(candidates)} unsent candidates.")
+            
+    # Ultimate fallback: if there are still absolutely no new articles anywhere, just reuse the general feed's latest articles
     if not candidates:
-        logger.warning("All fetched articles have already been sent in previous runs. Falling back to the latest 10 RSS articles to avoid skipping delivery.")
-        candidates = all_articles[:10]
+        logger.warning("All fetched articles in both category and general feeds have already been sent in previous runs. Falling back to the latest general feed articles to avoid skipping delivery.")
+        if category_slug is not None:
+            all_articles = feeds.fetch_articles(category_slug=None, max_items=args.limit)
+        candidates = all_articles[:10] if all_articles else []
+        
+    if not candidates:
+        logger.error("No candidate articles available for curation. Pipeline execution aborted.")
+        sys.exit(1)
         
     # 4. Generate 3-level simplified article packages using Gemini
     curated_data = curator.curate_article(candidates, weekly_topic, mock=args.mock)
