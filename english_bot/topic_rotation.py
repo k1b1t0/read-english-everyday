@@ -1,4 +1,4 @@
-from datetime import datetime, date, timedelta
+from datetime import datetime, date, timedelta, timezone
 import logging
 
 logger = logging.getLogger(__name__)
@@ -18,7 +18,7 @@ def get_current_topic() -> dict:
     """Calculates the current topic using a 2-day rotation cycle based on GMT+7 date."""
     epoch = date(2026, 1, 1)
     # Get current date in Vietnam time (GMT+7)
-    vn_now = datetime.utcnow() + timedelta(hours=7)
+    vn_now = datetime.now(timezone(timedelta(hours=7)))
     today = vn_now.date()
     
     days = (today - epoch).days

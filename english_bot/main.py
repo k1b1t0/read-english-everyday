@@ -1,7 +1,17 @@
 import argparse
 import sys
+import os
 import logging
 from dotenv import load_dotenv
+
+# Add project root and local directory to sys.path to make imports robust
+root_path = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+if root_path not in sys.path:
+    sys.path.insert(0, root_path)
+
+local_path = os.path.dirname(os.path.abspath(__file__))
+if local_path not in sys.path:
+    sys.path.insert(0, local_path)
 
 import feeds
 import topic_rotation
@@ -17,7 +27,7 @@ logging.basicConfig(
         logging.StreamHandler(sys.stdout)
     ]
 )
-logger = logging.getLogger("main")
+logger = logging.getLogger("english_bot")
 
 def main():
     # Load .env file for local testing

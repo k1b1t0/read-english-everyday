@@ -4,6 +4,9 @@ import re
 
 logger = logging.getLogger(__name__)
 
+PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+DEFAULT_STATE_FILE = os.path.join(PROJECT_ROOT, "sent_urls.txt")
+
 def normalize_url(url: str) -> str:
     """Normalizes News in Levels URLs by stripping out the '-level-X' suffix to avoid duplicates."""
     if not url:
@@ -14,8 +17,11 @@ def normalize_url(url: str) -> str:
         normalized = normalized[:-1]
     return normalized
 
-def load_sent_urls(filepath: str = "sent_urls.txt") -> set[str]:
+def load_sent_urls(filepath: str = None) -> set[str]:
     """Loads previously sent normalized URLs from the state file."""
+    if filepath is None:
+        filepath = DEFAULT_STATE_FILE
+        
     if not os.path.exists(filepath):
         logger.info(f"State file {filepath} not found. Creating a new one.")
         return set()
@@ -29,10 +35,13 @@ def load_sent_urls(filepath: str = "sent_urls.txt") -> set[str]:
         logger.error(f"Failed to read state file {filepath}: {e}")
         return set()
 
-def add_sent_url(url: str, filepath: str = "sent_urls.txt", max_limit: int = 300) -> None:
+def add_sent_url(url: str, filepath: str = None, max_limit: int = 300) -> None:
     """Appends a new normalized URL to the state file and maintains the max limit."""
     if not url:
         return
+        
+    if filepath is None:
+        filepath = DEFAULT_STATE_FILE
         
     normalized_url = normalize_url(url)
     try:

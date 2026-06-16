@@ -2,7 +2,7 @@ name: Daily English Bot for Kids
 
 on:
   schedule:
-    - cron: '0 23 * * *'   # 06:00 AM GMT+7 (11:00 PM UTC)
+    - cron: '0 23 * * *'   # 06:00 AM GMT+7 (23:00 UTC)
   workflow_dispatch:      # Allows manual trigger from GitHub UI
 
 permissions:
@@ -26,10 +26,10 @@ jobs:
       - name: Run daily curator bot
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-          GEMINI_MODEL: ${{ vars.GEMINI_MODEL || secrets.GEMINI_MODEL || 'gemini-3.5-flash' }}
+          GEMINI_MODEL: ${{ vars.GEMINI_MODEL || secrets.GEMINI_MODEL || 'gemini-2.0-flash' }}
           ZALO_BOT_TOKEN: ${{ secrets.ZALO_BOT_TOKEN }}
           ZALO_CHAT_ID: ${{ secrets.ZALO_CHAT_ID }}
-        run: uv run python main.py
+        run: uv run python english_bot/main.py
 
       - name: Commit & Push sent_urls.txt state changes
         run: |
