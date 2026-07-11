@@ -9,48 +9,18 @@ from google.genai import types
 
 logger = logging.getLogger(__name__)
 
-class LevelContent(BaseModel):
-    level: Literal["Level 1", "Level 2", "Level 3"]
-    vocab_words: List[str] = Field(description="Exactly 5 interesting or challenging words from that level's passage. Bare words only - no definitions, translations or phonetics.")
-    phrases: List[str] = Field(description="Exactly 5 useful expressions, collocations or phrases from that level's passage (mix of noun, verb, adjective phrases, etc.). Bare phrases only - no translations or explanations.")
-    passage: str = Field(description="A short, engaging reading passage (60-120 words) that rewrites the selected news article at this level, naturally incorporating all 5 vocab_words and 5 phrases.")
-
 class CuratedArticle(BaseModel):
     title: str = Field(description="The title of the selected article.")
     url: str = Field(description="The URL of the selected article.")
     topic: str = Field(description="The topic name for the current week.")
-    levels: List[LevelContent] = Field(description="The three levels of the content.", min_length=3, max_length=3)
+    vocab_words: List[str] = Field(description="Exactly 5 interesting or challenging vocabulary words from the article. Bare words only, no translations, parts of speech or definitions.")
+    phrases: List[str] = Field(description="Exactly 10 useful phrases, collocations or sentence structures from the article. Bare phrases only, no translations or definitions.")
+    story_passage: Optional[str] = Field(None, description="A very simple, short paragraph (50-80 words) using some of the extracted new words and phrases in an everyday, conversational context suitable for kids. If not possible, leave empty or omit.")
 
 def curate_article(candidates: list[dict], weekly_topic: str, mock: bool = False) -> Optional[dict]:
-    """Sends candidate articles and the weekly topic to Gemini to select and rewrite one article into 3 levels."""
-    if mock:
-        logger.info("Using mock curation mode.")
-        selected = candidates[0] if candidates else {"title": "A Smart Crow", "url": "https://www.newsinlevels.com/smart-crow"}
-        return {
-            "title": selected.get("title", "A Smart Crow"),
-            "url": selected.get("url", "https://www.newsinlevels.com/smart-crow"),
-            "topic": weekly_topic,
-            "levels": [
-                {
-                    "level": "Level 1",
-                    "vocab_words": ["thirsty", "pitcher", "reach", "drops", "rises"],
-                    "phrases": ["a thirsty crow", "very little water", "cannot reach it", "drops small stones", "water level rises"],
-                    "passage": "A thirsty crow finds a pitcher with very little water. He cannot reach it. He drops small stones into the pitcher. The water level rises, and he drinks."
-                },
-                {
-                    "level": "Level 2",
-                    "vocab_words": ["scorching", "discovered", "narrow", "pebbles", "satisfy"],
-                    "phrases": ["scorching summer day", "discovered a deep pitcher", "small amount of water", "too narrow", "unable to reach it"],
-                    "passage": "On a scorching summer day, a thirsty crow discovered a deep pitcher containing a small amount of water. Because the neck was too narrow, he was unable to reach it. He decided to drop pebbles into the pitcher to raise the water level. Gradually, the water rose, allowing him to satisfy his thirst."
-                },
-                {
-                    "level": "Level 3",
-                    "vocab_words": ["blistering", "dehydrated", "meager", "ingeniously", "quench"],
-                    "phrases": ["blistering heatwave", "dehydrated crow", "came across a pitcher", "meager quantity of water", "physically impossible"],
-                    "passage": "Amidst a blistering heatwave, a dehydrated crow came across a pitcher filled with a meager quantity of water. Due to the pitcher's narrow neck, reaching the liquid was physically impossible. Ingeniously, he began collecting small pebbles and dropping them into the vessel. Eventually, the water level rose to the brim, and the clever crow was able to quench his thirst."
-                }
-            ]
-        }
+    """Sends candidate articles and the weekly topic to Gemini to select and extract vocabulary/phrases."""
+    if mock or os.environ.get("USE_MOCK", "").lower() == "true":
+        return _get_mock_curation(candidates, weekly_topic)
 
     api_key = os.environ.get("GEMINI_API_KEY")
     if not api_key:
@@ -66,7 +36,7 @@ def curate_article(candidates: list[dict], weekly_topic: str, mock: bool = False
     for idx, art in enumerate(candidates, start=1):
         articles_text += f"[{idx}] Title: {art['title']}\nURL: {art['url']}\nSummary: {art['summary']}\n\n"
         
-    system_prompt = f"""You are a friendly English learning assistant for Vietnamese children aged 8-14.
+    system_prompt = f"""You are a friendly English learning assistant for Vietnamese children aged 8-14 (Grades 1-9 / Cấp 1, Cấp 2).
 
 This week's topic: {weekly_topic}
 
@@ -75,39 +45,43 @@ Given the list of articles below, select ONE article that:
 2. Is age-appropriate — no violence, politics, or adult content.
 3. Is short and engaging for children.
 
-For the selected article, generate content at ALL THREE levels (Level 1, Level 2, Level 3). The levels must share the same article title and URL.
+For the selected article, extract exactly 5 new vocabulary words, exactly 10 useful phrases or sentence structures to help children learn, and write a very simple everyday short story utilizing these terms.
 
-For each level:
-- vocab_words: Exactly 5 interesting or challenging words from the article at this level.
-  List ONLY the bare words — no definitions, no phonetics, no translations, no examples.
-- phrases: Exactly 5 useful expressions, collocations, or phrases from the article at this level (a mix of verb phrases, noun phrases, adjectives, etc., to help kids learn word combinations).
-  List ONLY the phrases — no explanation, no translation.
-- passage: A short, engaging reading passage (60-120 words) that rewrites the selected news article at this level, naturally incorporating all 5 vocab_words and all 5 phrases.
-  - Level 1: Very simple sentences, common words only. For young beginners.
-  - Level 2: Slightly more complex sentences, some new vocabulary. For intermediate learners.
-  - Level 3: Close to original news style. For advanced young readers.
-
-CRITICAL RULES:
-- DO NOT explain any word or phrase. No definitions. No translations. No phonetics.
-- The passage must read naturally as a news rewrite while embedding the selected vocabulary words and phrases.
-- Keep all three levels clearly distinct in complexity.
+Detailed guidelines:
+- vocab_words: Exactly 5 interesting or challenging vocabulary words from the article. List ONLY the bare words — no definitions, no translations, no parts of speech, no phonetics. Example: ["discover", "river", "climate", "melt", "ground"].
+- phrases: Exactly 10 useful phrases, collocations, or sentence structures from the article. List ONLY the bare phrases — no translations or explanations. Example: ["turn orange", "due to climate change", "melting ice"].
+- story_passage: A very simple, short paragraph (50-80 words) using some of the extracted new words and phrases in an everyday, conversational context suitable for kids. It should be highly simple, natural, and helpful for understanding how to use the words in daily conversation.
 
 Candidate Articles:
 {articles_text}
 """
 
-    # Determine models list starting from GEMINI_MODEL down to fallbacks
-    env_model = os.environ.get("GEMINI_MODEL")
-    priority_fallbacks = [
-        "gemini-2.5-pro",
-        "gemini-2.5-flash",
-        "gemma-4-31b-it",
-        "gemma-4-26b-a4b-it"
-    ]
-    
+    # Determine models list starting from GEMINI_MODEL_LIST/GEMINI_MODELS/GEMINI_MODEL down to fallbacks
     models_to_try = []
-    if env_model:
+    
+    env_model_list = os.environ.get("GEMINI_MODEL_LIST")
+    if env_model_list:
+        models_to_try.extend([m.strip() for m in env_model_list.split(",") if m.strip()])
+        
+    env_models = os.environ.get("GEMINI_MODELS")
+    if env_models:
+        for m in env_models.split(","):
+            m_clean = m.strip()
+            if m_clean and m_clean not in models_to_try:
+                models_to_try.append(m_clean)
+        
+    env_model = os.environ.get("GEMINI_MODEL")
+    if env_model and env_model not in models_to_try:
         models_to_try.append(env_model)
+        
+    priority_fallbacks = [
+        "gemma-4-26b-a4b-it",
+        "gemma-4-31b-it",
+        "gemini-3.1-flash-lite",
+        "gemini-2.5-flash-lite",
+        "gemini-2.5-flash",
+        "gemini-3.5-flash"
+    ]
     for model in priority_fallbacks:
         if model not in models_to_try:
             models_to_try.append(model)
@@ -136,11 +110,11 @@ Candidate Articles:
                 # Parse & validate response
                 result_json = json.loads(response.text)
                 # Basic validation of schema structure
-                if "title" in result_json and "url" in result_json and "levels" in result_json:
+                if "title" in result_json and "url" in result_json and ("story_passage" in result_json or "passage" in result_json):
                     logger.info(f"Gemini curation successful! Selected article: '{result_json['title']}' using model '{model_name}'")
                     return result_json
                 else:
-                    raise ValueError("Invalid structure in Gemini response JSON")
+                    raise ValueError("Invalid structure in Gemini response JSON: missing title, url, or story_passage")
                     
             except Exception as e:
                 logger.warning(f"Attempt {attempt + 1} with model '{model_name}' failed: {e}")
@@ -155,3 +129,36 @@ Candidate Articles:
 
     logger.error("All models in list failed. Gemini curation returned no results.")
     return None
+
+def _get_mock_curation(candidates: list[dict], weekly_topic: str) -> dict:
+    """Helper to return a mock response when in mock mode, keeping curate_article clean."""
+    logger.info("Using mock curation mode.")
+    selected = candidates[0] if candidates else {
+        "title": "Why are Arctic rivers turning orange?", 
+        "url": "https://www.sciencejournalforkids.org/articles/why-are-arctic-rivers-turning-orange/"
+    }
+    return {
+        "title": selected.get("title", "Why are Arctic rivers turning orange?"),
+        "url": selected.get("url", "https://www.sciencejournalforkids.org/articles/why-are-arctic-rivers-turning-orange/"),
+        "topic": weekly_topic,
+        "vocab_words": [
+            "discover",
+            "permafrost",
+            "chemical",
+            "orange",
+            "river"
+        ],
+        "phrases": [
+            "turn orange",
+            "due to climate change",
+            "arctic region",
+            "release into the water",
+            "harm the fish",
+            "melting ice",
+            "frozen ground",
+            "natural chemicals",
+            "protect our Earth",
+            "learning about science"
+        ],
+        "story_passage": "Yesterday, we decided to protect our Earth. We started by learning about science. We saw that the ice in the arctic region is melting, and the ground is changing. It is important to know about natural chemicals so we don't harm the fish."
+    }

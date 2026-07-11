@@ -7,12 +7,20 @@ logger = logging.getLogger(__name__)
 PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 DEFAULT_STATE_FILE = os.path.join(PROJECT_ROOT, "sent_urls.txt")
 
+# Extensible rules for rewriting/normalizing URLs from different sources
+URL_CLEAN_RULES = [
+    # News in Levels: strip -level-X (case-insensitive) suffix
+    (r'(?i)-level-\d/?$', ''),
+    # Add rules for other sources here to avoid modifying code later
+]
+
 def normalize_url(url: str) -> str:
-    """Normalizes News in Levels URLs by stripping out the '-level-X' suffix to avoid duplicates."""
+    """Normalizes URLs by applying source-specific cleaning rules to avoid duplicate runs on different levels/variants."""
     if not url:
         return ""
-    # Strip whitespace, strip -level-X (case-insensitive), and strip trailing slash
-    normalized = re.sub(r'(?i)-level-\d/?$', '', url.strip())
+    normalized = url.strip()
+    for pattern, replacement in URL_CLEAN_RULES:
+        normalized = re.sub(pattern, replacement, normalized)
     if normalized.endswith('/'):
         normalized = normalized[:-1]
     return normalized
